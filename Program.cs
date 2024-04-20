@@ -28,20 +28,45 @@ namespace Interface
         {
             var message = update.Message;
 
+            /* Commands */ 
+            
             if (message.Text != null)
             {
 
                 Console.WriteLine($"{message.Chat.FirstName} {message.Chat.LastName} | {message.Text}"); /* logs */
 
-                if (message.Text.ToLower().Contains("ресурс"))
+                if (message.Text.ToLower().Contains("ресурс") || message.Text.ToLower().Contains("jiafei"))
                 {
 
                     await botClient.SendTextMessageAsync(message.Chat.Id, "Hello sweetheart");
                     return;
 
+                } else if (message.Text.ToLower().StartsWith("/join"))
+                {
+                    await botClient.SendTextMessageAsync(message.Chat.Id, "Welcome to the cLuB! Type /join *team token* or type /create to create a brand new team");
+                    return;   
+                } 
+                if (message.Text.ToLower().Contains("/create"))
+                {
+                    var userToken = await botClient.GetMeAsync();
+
+                    
+                    
+
+                    await botClient.SendTextMessageAsync(message.Chat.Id, userToken.ToString());
+                    return;
                 }
+                
+
+                
+
+
+
 
             }
+            
+             /* Documents */
+
             if (message.Document != null)
             {
                 await botClient.SendTextMessageAsync(message.Chat.Id, "Accepter wait for review");
@@ -66,12 +91,24 @@ namespace Interface
                 return;
 
             }
+     
+            {
+                /* Dice */
+                
+                if (message.Dice != null)
+                {
 
+
+                    var diceValue = message.Dice.Value;
+                    await botClient.SendTextMessageAsync(message.Chat.Id, $"You threw dice with value:  {diceValue}");
+
+
+                }                
+            }  
 
 
 
         }
-
 
         private static Task Error(ITelegramBotClient client, Exception exception, CancellationToken token)
         {
