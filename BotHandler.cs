@@ -7,7 +7,6 @@ namespace Bot
     {
         private readonly ITelegramBotClient botClient;
         private readonly ITaskManager taskManager;
-        private Dictionary<long, string> deleteTaskConfirmation = new Dictionary<long, string>();
         private static Dictionary<long, TaskState> taskStates = new Dictionary<long, TaskState>();
 
         public BotHandler(ITelegramBotClient botClient, ITaskManager taskManager)
@@ -183,77 +182,6 @@ namespace Bot
             await botClient.SendTextMessageAsync(message.Chat.Id, response);
         }
 
-        //private async Task DeleteTask(Message message)
-        //{
-        //    var parts = message.Text.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
-
-        //    if (parts.Length < 2)
-        //    {
-        //        await botClient.SendTextMessageAsync(message.Chat.Id, "Usage: /deletetask <task name> or /deletetask all");
-        //        return;
-        //    }
-
-        //    var taskName = parts[1];
-
-        //    if (taskName.Equals("all", StringComparison.OrdinalIgnoreCase))
-        //    {
-        //        taskManager.RemoveAllTasks(message.Chat.Id);
-        //        await botClient.SendTextMessageAsync(message.Chat.Id, "All tasks have been deleted.");
-        //        return;
-        //    }
-
-        //    // Retrieve the list of tasks for the user
-        //    var taskList = taskManager.GetTasks(message.Chat.Id);
-
-        //    // Find the task with the provided name
-        //    var taskToRemove = taskList.FirstOrDefault(t => t.Name.Equals(taskName, StringComparison.OrdinalIgnoreCase));
-
-        //    // If the task is not found, inform the user
-        //    if (taskToRemove == null)
-        //    {
-        //        await botClient.SendTextMessageAsync(message.Chat.Id, $"Task '{taskName}' not found.");
-        //        return;
-        //    }
-
-        //    // Store the task in the dictionary for confirmation
-        //    deleteTaskConfirmation[message.Chat.Id] = taskName;
-
-        //    // Ask for confirmation
-        //    await botClient.SendTextMessageAsync(message.Chat.Id, $"Are you sure you want to delete the task '{taskName}'? Reply with /confirmdelete to proceed.");
-        //}
-
-        //private async Task ConfirmDeleteTask(Message message)
-        //{
-        //    if (!deleteTaskConfirmation.ContainsKey(message.Chat.Id))
-        //    {
-        //        await botClient.SendTextMessageAsync(message.Chat.Id, "No task is pending deletion.");
-        //        return;
-        //    }
-
-        //    var taskName = deleteTaskConfirmation[message.Chat.Id];
-
-        //    // Retrieve the task list and find the task to delete
-        //    var taskList = taskManager.GetTasks(message.Chat.Id);
-        //    var taskToRemove = taskList.FirstOrDefault(t => t.Name.Equals(taskName, StringComparison.OrdinalIgnoreCase));
-
-        //    // If the task is not found (edge case), inform the user
-        //    if (taskToRemove == null)
-        //    {
-        //        await botClient.SendTextMessageAsync(message.Chat.Id, $"Task '{taskName}' no longer exists.");
-        //        deleteTaskConfirmation.Remove(message.Chat.Id); // Clear the pending confirmation
-        //        return;
-        //    }
-
-        //    // Remove the task from the task manager
-        //    taskManager.RemoveTask(message.Chat.Id, taskToRemove);
-
-        //    // Notify the user that the task was successfully removed
-        //    await botClient.SendTextMessageAsync(message.Chat.Id, $"Task '{taskName}' has been deleted successfully.");
-
-        //    // Clear the pending confirmation
-        //    deleteTaskConfirmation.Remove(message.Chat.Id);
-        //}
-
         private async Task DeleteTask(Message message)
         {
             var parts = message.Text.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -275,14 +203,6 @@ namespace Bot
 
             tasks.Remove(taskToRemove);
             await botClient.SendTextMessageAsync(message.Chat.Id, "Task deleted successfully.");
-        }
-
-        public class TaskState
-        {
-            public string Name { get; set; }
-            public DateTime? DueDate { get; set; }
-            public string Importance { get; set; }
-            public string CurrentStep { get; set; }
         }
 
         public Task Error(ITelegramBotClient client, Exception exception, CancellationToken token)
