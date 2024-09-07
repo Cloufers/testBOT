@@ -42,6 +42,12 @@ namespace Bot
                     return;
                 }
 
+                if (message.Text.StartsWith("/deletetask"))
+                {
+                    await DeleteTask(message);
+                    return;
+                }
+
                 if (message.Text.ToLower().Contains("ресурс") || message.Text.ToLower().Contains("jiafei"))
                 {
                     await botClient.SendTextMessageAsync(message.Chat.Id, "Hello sweetheart");
@@ -247,6 +253,29 @@ namespace Bot
         //    // Clear the pending confirmation
         //    deleteTaskConfirmation.Remove(message.Chat.Id);
         //}
+
+        private async Task DeleteTask(Message message)
+        {
+            var parts = message.Text.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 2)
+            {
+                await botClient.SendTextMessageAsync(message.Chat.Id, "Usage: /deletetask <name>");
+                return;
+            }
+
+            var name = parts[1];
+            var tasks = taskManager.GetTasks(message.Chat.Id);
+            var taskToRemove = tasks.FirstOrDefault(t => t.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+
+            if (taskToRemove == null)
+            {
+                await botClient.SendTextMessageAsync(message.Chat.Id, "Task not found.");
+                return;
+            }
+
+            tasks.Remove(taskToRemove);
+            await botClient.SendTextMessageAsync(message.Chat.Id, "Task deleted successfully.");
+        }
 
         public class TaskState
         {
