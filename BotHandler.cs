@@ -1,5 +1,7 @@
 ﻿using Telegram.Bot.Types;
 using Telegram.Bot;
+using Telegram.Bot.Types.ReplyMarkups;
+using Telegram.Bot.Types.Enums;
 
 namespace Bot
 {
@@ -8,6 +10,7 @@ namespace Bot
         private readonly ITelegramBotClient botClient;
         private readonly ITaskManager taskManager;
         private readonly string connectionString;
+        private DateTime currentDate = DateTime.Now;
         private static Dictionary<long, TaskState> taskStates = new Dictionary<long, TaskState>();
 
         public BotHandler(ITelegramBotClient botClient, ITaskManager taskManager)
@@ -18,132 +21,223 @@ namespace Bot
 
         public async Task Update(ITelegramBotClient botClient, Update update, CancellationToken token)
         {
-            var message = update.Message;
-
-            if (message.Text != null)
+            if (update.Type == UpdateType.Message && update.Message?.Text != null)
             {
-                Console.WriteLine($"{message.Chat.FirstName} {message.Chat.LastName} | {message.Text}"); // logs
+                await HandleMessage(update.Message);
+            }
+            else if (update.Type == UpdateType.CallbackQuery)
+            {
+                await HandleCallbackQuery(update.CallbackQuery);
+            }
+        }
 
-                if (message.Text.StartsWith("/addtask"))
-                {
-                    await AddTask(message);
-                    return;
-                }
+        private async Task HandleMessage(Message message)
+        {
+            Console.WriteLine($"{message.Chat.FirstName} {message.Chat.LastName} | {message.Text}"); // logs
 
-                if (message.Text.StartsWith("/showtasks"))
-                {
+            if (message.Text.StartsWith("/"))
+            {
+                await HandleCommand(message);
+            }
+            else if (taskStates.ContainsKey(message.Chat.Id))
+            {
+                await AddTask(message);
+            }
+        }
+
+        private async Task HandleCommand(Message message)
+        {
+            switch (message.Text.Split(' ')[0])
+            {
+                case "/addtask":
+                    await StartAddTask(message);
+                    break;
+
+                case "/showtasks":
                     await ShowTasks(message);
-                    return;
-                }
+                    break;
 
-                if (message.Text.StartsWith("/shownearest"))
-                {
+                case "/shownearest":
                     await ShowNearestTasks(message);
-                    return;
-                }
+                    break;
 
-                if (message.Text.StartsWith("/deletetask"))
-                {
+                case "/deletetask":
                     await DeleteTask(message);
-                    return;
-                }
+                    break;
 
-                if (message.Text.ToLower().Contains("ресурс") || message.Text.ToLower().Contains("jiafei"))
-                {
-                    await botClient.SendTextMessageAsync(message.Chat.Id, "Hello sweetheart");
-                    return;
-                }
-
-                // Check if user is in the middle of adding a task
-                if (taskStates.ContainsKey(message.Chat.Id))
-                {
-                    await AddTask(message);
-                    return;
-                }
+                default:
+                    await botClient.SendTextMessageAsync(message.Chat.Id, "Unknown command.");
+                    break;
             }
+        }
 
-            if (message.Document != null)
-            {
-                await botClient.SendTextMessageAsync(message.Chat.Id, "Accepter wait for review");
-
-                var fileId = update.Message.Document.FileId;
-                var fileInfo = await botClient.GetFileAsync(fileId, token);
-                var filePath = fileInfo.FilePath;
-                var chatID = message.Chat.Id.ToString();
-
-                string userFolderPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), chatID);
-                Directory.CreateDirectory(userFolderPath);
-
-                string destinationFilePath = Path.Combine(userFolderPath, message.Document.FileName);
-
-                await using Stream fileStream = System.IO.File.Create(destinationFilePath);
-                await botClient.DownloadFileAsync(
-                    filePath: filePath,
-                    destination: fileStream,
-                    cancellationToken: token);
-
-                return;
-            }
-
-            if (message.Dice != null)
-            {
-                var diceValue = message.Dice.Value;
-                await botClient.SendTextMessageAsync(message.Chat.Id, $"You threw dice with value:  {diceValue}");
-            }
+        private async Task StartAddTask(Message message)
+        {
+            taskStates[message.Chat.Id] = new TaskState { CurrentStep = "Name" };
+            await botClient.SendTextMessageAsync(message.Chat.Id, "Please enter the title of the task:");
         }
 
         private async Task AddTask(Message message)
         {
-            if (!taskStates.ContainsKey(message.Chat.Id))
+            var state = taskStates[message.Chat.Id];
+
+            switch (state.CurrentStep)
             {
-                taskStates[message.Chat.Id] = new TaskState { CurrentStep = "Name" };
-                await botClient.SendTextMessageAsync(message.Chat.Id, "Please enter the title of the task:");
+                case "Name":
+                    state.Name = message.Text;
+                    state.CurrentStep = "DueDate";
+                    await SendCalendar(message.Chat.Id);
+                    break;
+
+                case "DueDate":
+                    // This case will be handled by the callback query handler
+                    break;
+
+                case "Importance":
+                    await SendImportanceKeyboard(message.Chat.Id);
+                    break;
+            }
+        }
+
+        private async Task HandleCallbackQuery(CallbackQuery callbackQuery)
+        {
+            var chatId = callbackQuery.Message.Chat.Id;
+            var data = callbackQuery.Data;
+
+            if (data.StartsWith("date_"))
+            {
+                await HandleDateSelection(chatId, data);
+            }
+            else if (data.StartsWith("importance_"))
+            {
+                await HandleImportanceSelection(chatId, data);
+            }
+            else if (data.StartsWith("prev_") || data.StartsWith("next_"))
+            {
+                await HandleMonthNavigation(chatId, callbackQuery.Message.MessageId, data);
+            }
+        }
+
+        private async Task HandleDateSelection(long chatId, string data)
+        {
+            var dateString = data.Substring(5);
+            if (DateTime.TryParse(dateString, out var date))
+            {
+                var state = taskStates[chatId];
+                state.DueDate = date;
+                state.CurrentStep = "Importance";
+                await SendImportanceKeyboard(chatId);
             }
             else
             {
-                var state = taskStates[message.Chat.Id];
+                await botClient.SendTextMessageAsync(chatId, "Invalid date. Please try again.");
+            }
+        }
 
-                switch (state.CurrentStep)
+        private async Task HandleImportanceSelection(long chatId, string data)
+        {
+            var importance = data.Substring(11);
+            var state = taskStates[chatId];
+            state.Importance = importance;
+
+            var task = new TaskItem
+            {
+                Name = state.Name,
+                DueDate = state.DueDate.Value,
+                Importance = state.Importance
+            };
+
+            taskManager.AddTask(chatId, task);
+            taskStates.Remove(chatId);
+            await botClient.SendTextMessageAsync(chatId, "Task added successfully.");
+        }
+
+        private async Task HandleMonthNavigation(long chatId, int messageId, string data)
+        {
+            if (data.StartsWith("prev_"))
+            {
+                currentDate = currentDate.AddMonths(-1);
+            }
+            else if (data.StartsWith("next_"))
+            {
+                currentDate = currentDate.AddMonths(1);
+            }
+
+            var keyboard = new InlineKeyboardMarkup(GenerateCalendar());
+            await botClient.EditMessageReplyMarkupAsync(chatId, messageId, keyboard);
+        }
+
+        private async Task SendCalendar(long chatId)
+        {
+            var keyboard = new InlineKeyboardMarkup(GenerateCalendar());
+            await botClient.SendTextMessageAsync(chatId, "Пожалуйста, выберите дату:", replyMarkup: keyboard);
+        }
+
+        private InlineKeyboardButton[][] GenerateCalendar()
+        {
+            var buttons = new List<InlineKeyboardButton[]>();
+
+            // Добавляем строку с месяцем и годом
+            buttons.Add(new[]
+            {
+        InlineKeyboardButton.WithCallbackData("<<", $"prev_{currentDate:yyyy-MM}"),
+        InlineKeyboardButton.WithCallbackData($"{currentDate:MMMM yyyy}", $"month_{currentDate:yyyy-MM}"),
+        InlineKeyboardButton.WithCallbackData(">>", $"next_{currentDate:yyyy-MM}")
+    });
+
+            // Добавляем строку с названиями дней недели
+            buttons.Add(new[]
+            {
+        InlineKeyboardButton.WithCallbackData("Вс", "ignore"),
+        InlineKeyboardButton.WithCallbackData("Пн", "ignore"),
+        InlineKeyboardButton.WithCallbackData("Вт", "ignore"),
+        InlineKeyboardButton.WithCallbackData("Ср", "ignore"),
+        InlineKeyboardButton.WithCallbackData("Чт", "ignore"),
+        InlineKeyboardButton.WithCallbackData("Пт", "ignore"),
+        InlineKeyboardButton.WithCallbackData("Сб", "ignore")
+    });
+
+            // Генерируем кнопки с датами
+            var firstDayOfMonth = new DateTime(currentDate.Year, currentDate.Month, 1);
+            var daysInMonth = DateTime.DaysInMonth(currentDate.Year, currentDate.Month);
+
+            var currentRow = new List<InlineKeyboardButton>();
+            for (int i = 0; i < (int)firstDayOfMonth.DayOfWeek; i++)
+            {
+                currentRow.Add(InlineKeyboardButton.WithCallbackData(" ", "ignore"));
+            }
+
+            for (int day = 1; day <= daysInMonth; day++)
+            {
+                var date = new DateTime(currentDate.Year, currentDate.Month, day);
+                currentRow.Add(InlineKeyboardButton.WithCallbackData(
+                    day.ToString(),
+                    $"date_{date:yyyy-MM-dd}"
+                ));
+
+                if (currentRow.Count == 7 || day == daysInMonth)
                 {
-                    case "Name":
-                        state.Name = message.Text;
-                        state.CurrentStep = "DueDate";
-                        await botClient.SendTextMessageAsync(message.Chat.Id, "Please enter the deadline date (yyyy-MM-dd):");
-                        break;
-
-                    case "DueDate":
-                        if (!DateTime.TryParse(message.Text, out var date))
-                        {
-                            await botClient.SendTextMessageAsync(message.Chat.Id, "Invalid date format. Please use yyyy-MM-dd.");
-                            return;
-                        }
-                        state.DueDate = date;
-                        state.CurrentStep = "Importance";
-                        await botClient.SendTextMessageAsync(message.Chat.Id, "Please enter the importance (red, blue, green):");
-                        break;
-
-                    case "Importance":
-                        var importance = message.Text.ToLower();
-                        if (importance != "red" && importance != "blue" && importance != "green")
-                        {
-                            await botClient.SendTextMessageAsync(message.Chat.Id, "Invalid importance. Please use red, blue, or green.");
-                            return;
-                        }
-                        state.Importance = importance;
-
-                        var task = new TaskItem
-                        {
-                            Name = state.Name,
-                            DueDate = state.DueDate.Value,
-                            Importance = state.Importance
-                        };
-
-                        taskManager.AddTask(message.Chat.Id, task);
-                        taskStates.Remove(message.Chat.Id);
-                        await botClient.SendTextMessageAsync(message.Chat.Id, "Task added successfully.");
-                        break;
+                    buttons.Add(currentRow.ToArray());
+                    currentRow = new List<InlineKeyboardButton>();
                 }
             }
+
+            return buttons.ToArray();
+        }
+
+        private async Task SendImportanceKeyboard(long chatId)
+        {
+            var keyboard = new InlineKeyboardMarkup(new[]
+            {
+                new []
+                {
+                    InlineKeyboardButton.WithCallbackData("🔴 Красный", "importance_red"),
+                    InlineKeyboardButton.WithCallbackData("🔵 Синий", "importance_blue"),
+                    InlineKeyboardButton.WithCallbackData("🟢 Зеленый", "importance_green"),
+                }
+            });
+
+            await botClient.SendTextMessageAsync(chatId, "Please select the importance:", replyMarkup: keyboard);
         }
 
         private async Task ShowTasks(Message message)
@@ -231,6 +325,11 @@ namespace Bot
             Console.WriteLine($"Error: {exception.Message}");
             return Task.CompletedTask;
             throw new NotImplementedException();
+        }
+
+        private void TaskHandler(ChatId chatId)
+        {
+            var con = new CalendarHandler();
         }
     }
 }
