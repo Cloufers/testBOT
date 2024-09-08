@@ -47,5 +47,10 @@
                 tasks[chatId].Remove(task); // Removes the specific task for the chatId
             }
         }
+
+        public IEnumerable<long> GetAllChatIds()
+        {
+            return tasks.Keys;
+        }
     }
 }

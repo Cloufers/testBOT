@@ -11,5 +11,7 @@
         List<TaskItem> GetTasks(long chatId);
 
         List<TaskItem> GetNearestTasks(long chatId);
+
+        public IEnumerable<long> GetAllChatIds();
     }
 }

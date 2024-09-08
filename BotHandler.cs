@@ -205,6 +205,26 @@ namespace Bot
             await botClient.SendTextMessageAsync(message.Chat.Id, "Task deleted successfully.");
         }
 
+        protected internal async Task CheckTasksForNotifications()
+        {
+            while (true)
+            {
+                foreach (var chatId in taskManager.GetAllChatIds())
+                {
+                    var tasks = taskManager.GetTasks(chatId);
+                    var tasksToNotify = tasks.Where(t => t.DueDate.Date == DateTime.Today.AddDays(1)).ToList();
+
+                    foreach (var task in tasksToNotify)
+                    {
+                        await botClient.SendTextMessageAsync(chatId, $"Reminder: Task '{task.Name}' is due tomorrow!");
+                    }
+                }
+
+                // Wait for 24 hours before checking again
+                await Task.Delay(TimeSpan.FromHours(24));
+            }
+        }
+
         public Task Error(ITelegramBotClient client, Exception exception, CancellationToken token)
         {
             throw new NotImplementedException();

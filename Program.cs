@@ -13,5 +13,11 @@
             client.StartReceiving(botHandler.Update, botHandler.Error);
             Console.ReadLine();
         }
+
+        private static async Task StartNotificationService(ITelegramBotClient botClient, ITaskManager taskManager)
+        {
+            var botHandler = new BotHandler(botClient, taskManager);
+            _ = botHandler.CheckTasksForNotifications();
+        }
     }
 }
