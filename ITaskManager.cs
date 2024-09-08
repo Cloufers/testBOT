@@ -2,6 +2,8 @@
 {
     public interface ITaskManager
     {
+        void RegisterUser(long chatId);
+
         void AddTask(long chatId, TaskItem task);
 
         void RemoveAllTasks(long chatId);

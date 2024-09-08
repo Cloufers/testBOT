@@ -7,6 +7,7 @@ namespace Bot
     {
         private readonly ITelegramBotClient botClient;
         private readonly ITaskManager taskManager;
+        private readonly string connectionString;
         private static Dictionary<long, TaskState> taskStates = new Dictionary<long, TaskState>();
 
         public BotHandler(ITelegramBotClient botClient, ITaskManager taskManager)
@@ -227,6 +228,8 @@ namespace Bot
 
         public Task Error(ITelegramBotClient client, Exception exception, CancellationToken token)
         {
+            Console.WriteLine($"Error: {exception.Message}");
+            return Task.CompletedTask;
             throw new NotImplementedException();
         }
     }
