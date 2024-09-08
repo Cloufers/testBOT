@@ -12,7 +12,7 @@ namespace Bot
             this.connectionString = connectionString;
         }
 
-        public void RegisterUser(long chatId)
+        public void RegisterUser(long chatId, string firstName, string lastName)
         {
             using (var conn = new NpgsqlConnection(connectionString))
             {
@@ -21,11 +21,14 @@ namespace Bot
                 {
                     cmd.Connection = conn;
                     cmd.CommandText = @"
-                    INSERT INTO users (chat_id)
-                    VALUES (@chatId)
-                    ON CONFLICT (chat_id) DO NOTHING;
+                    INSERT INTO users (chat_id, first_name, last_name)
+                    VALUES (@chatId, @firstName, @lastName)
+                    ON CONFLICT (chat_id) DO UPDATE
+                    SET first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name;
                 ";
                     cmd.Parameters.AddWithValue("chatId", chatId);
+                    cmd.Parameters.AddWithValue("firstName", firstName);
+                    cmd.Parameters.AddWithValue("lastName", lastName);
                     cmd.ExecuteNonQuery();
                 }
             }
@@ -33,7 +36,7 @@ namespace Bot
 
         public void AddTask(long chatId, TaskItem task)
         {
-            RegisterUser(chatId);
+            RegisterUser(chatId, "", "");
 
             using (var conn = new NpgsqlConnection(connectionString))
             {

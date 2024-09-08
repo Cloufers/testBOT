@@ -2,7 +2,7 @@
 {
     public interface ITaskManager
     {
-        void RegisterUser(long chatId);
+        void RegisterUser(long chatId, string firstName, string lastName);
 
         void AddTask(long chatId, TaskItem task);
 
