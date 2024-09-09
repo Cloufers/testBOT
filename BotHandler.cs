@@ -2,6 +2,7 @@
 using Telegram.Bot;
 using Telegram.Bot.Types.ReplyMarkups;
 using Telegram.Bot.Types.Enums;
+using System.Text;
 
 namespace Bot
 {
@@ -63,6 +64,29 @@ namespace Bot
 
                 case "/deletetask":
                     await DeleteTask(message);
+                    break;
+
+                case "/start":
+                    var welcomeMessage = @"Welcome to the Task Manager Bot! 🚀
+
+Here are the available commands:
+
+/addtask - Create a new task.
+/showtasks - Show all existing tasks.
+/shownearest - Show tasks with the nearest deadlines.
+/cancel - Cancel task creation process.
+/done - Mark task as completed.
+
+Let's get started! 🎉";
+                    await botClient.SendTextMessageAsync(message.Chat.Id, welcomeMessage);
+                    break;
+
+                case "/cancel":
+                    await HandleCancelCommand(message);
+                    break;
+
+                case "/done":
+                    await HandleDoneCommand(message);
                     break;
 
                 default:
@@ -242,19 +266,34 @@ namespace Bot
 
         private async Task ShowTasks(Message message)
         {
-            // Retrieve the list of tasks from the task manager
             var taskList = taskManager.GetTasks(message.Chat.Id);
 
-            // Notify the user if there are no tasks
             if (taskList.Count == 0)
             {
-                await botClient.SendTextMessageAsync(message.Chat.Id, "No tasks found.");
+                await botClient.SendTextMessageAsync(message.Chat.Id, "У вас пока нет задач. Используйте /addtask, чтобы добавить новую задачу.");
                 return;
             }
 
-            // Format and display the task list
-            var response = string.Join("\n", taskList.Select(t => $"{t.Name} - {t.DueDate.ToShortDateString()} - {t.Importance}"));
-            await botClient.SendTextMessageAsync(message.Chat.Id, response);
+            var groupedTasks = taskList.GroupBy(t => t.Importance)
+                                       .OrderBy(g => g.Key == "red" ? 0 : g.Key == "blue" ? 1 : 2);
+
+            var response = new StringBuilder("📋 Ваши задачи:\n\n");
+
+            foreach (var group in groupedTasks)
+            {
+                string emoji = group.Key == "red" ? "🔴" : group.Key == "blue" ? "🔵" : "🟢";
+                response.AppendLine($"{emoji} {char.ToUpper(group.Key[0]) + group.Key.Substring(1)}:");
+
+                foreach (var task in group.OrderBy(t => t.DueDate))
+                {
+                    string dueDate = task.DueDate.ToString("dd.MM.yyyy");
+                    response.AppendLine($"  • {task.Name} (до {dueDate})");
+                }
+
+                response.AppendLine();
+            }
+
+            await botClient.SendTextMessageAsync(message.Chat.Id, response.ToString());
         }
 
         private async Task ShowNearestTasks(Message message)
@@ -327,9 +366,40 @@ namespace Bot
             throw new NotImplementedException();
         }
 
-        private void TaskHandler(ChatId chatId)
+        private async Task HandleCancelCommand(Message message)
         {
-            var con = new CalendarHandler();
+            if (taskStates.ContainsKey(message.Chat.Id))
+            {
+                taskStates.Remove(message.Chat.Id);
+                await botClient.SendTextMessageAsync(message.Chat.Id, "Task creation canceled.");
+            }
+            else
+            {
+                await botClient.SendTextMessageAsync(message.Chat.Id, "No task creation in progress.");
+            }
+        }
+
+        private async Task HandleDoneCommand(Message message)
+        {
+            var parts = message.Text.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 2)
+            {
+                await botClient.SendTextMessageAsync(message.Chat.Id, "Usage: /done <Task Name>");
+                return;
+            }
+
+            var taskName = parts[1];
+            var tasks = taskManager.GetTasks(message.Chat.Id);
+            var taskToMarkDone = tasks.FirstOrDefault(t => t.Name.Equals(taskName, StringComparison.OrdinalIgnoreCase));
+
+            if (taskToMarkDone == null)
+            {
+                await botClient.SendTextMessageAsync(message.Chat.Id, "Task not found.");
+                return;
+            }
+
+            taskManager.RemoveTask(message.Chat.Id, taskToMarkDone);
+            await botClient.SendTextMessageAsync(message.Chat.Id, $"Task '{taskToMarkDone.Name}' marked as done and removed from the list.");
         }
     }
 }
