@@ -3,6 +3,7 @@ using Telegram.Bot;
 using Telegram.Bot.Types.ReplyMarkups;
 using Telegram.Bot.Types.Enums;
 using System.Text;
+using System.Linq.Expressions;
 
 namespace Bot
 {
@@ -67,18 +68,8 @@ namespace Bot
                     break;
 
                 case "/start":
-                    var welcomeMessage = @"Welcome to the Task Manager Bot! 🚀
-
-Here are the available commands:
-
-/addtask - Create a new task.
-/showtasks - Show all existing tasks.
-/shownearest - Show tasks with the nearest deadlines.
-/cancel - Cancel task creation process.
-/done - Mark task as completed.
-
-Let's get started! 🎉";
-                    await botClient.SendTextMessageAsync(message.Chat.Id, welcomeMessage);
+                case "/menu":
+                    await SendMainMenu(message.Chat.Id);
                     break;
 
                 case "/cancel":
@@ -93,6 +84,32 @@ Let's get started! 🎉";
                     await botClient.SendTextMessageAsync(message.Chat.Id, "Unknown command.");
                     break;
             }
+        }
+
+        private async Task SendMainMenu(long chatId)
+        {
+            var keyboard = new ReplyKeyboardMarkup(new[]
+            {
+        new KeyboardButton[] { "📋 Меню" }
+    })
+            {
+                ResizeKeyboard = true
+            };
+
+            var welcomeMessage = @"Добро пожаловать в Task Manager Bot! 🚀
+
+Доступные команды:
+
+/addtask - Создать новую задачу
+/showtasks - Показать все существующие задачи
+/shownearest - Показать задачи с ближайшими сроками
+/task - Просмотреть детали задачи
+/cancel - Отменить процесс создания задачи
+/done - Отметить задачу как выполненную
+
+Начнем! 🎉";
+
+            await botClient.SendTextMessageAsync(chatId, welcomeMessage, replyMarkup: keyboard);
         }
 
         private async Task StartAddTask(Message message)
