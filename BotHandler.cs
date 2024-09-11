@@ -3,7 +3,6 @@ using Telegram.Bot;
 using Telegram.Bot.Types.ReplyMarkups;
 using Telegram.Bot.Types.Enums;
 using System.Text;
-using System.Linq.Expressions;
 
 namespace Bot
 {
@@ -41,9 +40,17 @@ namespace Bot
             {
                 await HandleCommand(message);
             }
-            else if (taskStates.ContainsKey(message.Chat.Id))
+            else if (taskStates.TryGetValue(message.Chat.Id, out var state))
             {
-                await AddTask(message);
+                if (state.CurrentStep.StartsWith("edit_"))
+                {
+                    var field = state.CurrentStep.Substring(5); // Remove "edit_" prefix
+                    await UpdateTaskDetails(message.Chat.Id, state.Name, field, message.Text);
+                }
+                else
+                {
+                    await AddTask(message);
+                }
             }
         }
 
@@ -78,6 +85,10 @@ namespace Bot
 
                 case "/done":
                     await HandleDoneCommand(message);
+                    break;
+
+                case "/task":
+                    await HandleTaskCommand(message);
                     break;
 
                 default:
@@ -137,6 +148,12 @@ namespace Bot
                 case "Importance":
                     await SendImportanceKeyboard(message.Chat.Id);
                     break;
+
+                case "description":
+                case "comments":
+                case "links":
+                    await UpdateTaskDetails(message.Chat.Id, state.Name, message.Text, state.CurrentStep);
+                    break;
             }
         }
 
@@ -156,6 +173,10 @@ namespace Bot
             else if (data.StartsWith("prev_") || data.StartsWith("next_"))
             {
                 await HandleMonthNavigation(chatId, callbackQuery.Message.MessageId, data);
+            }
+            else if (data.StartsWith("edit_description_") || data.StartsWith("edit_comments_") || data.StartsWith("edit_links_"))
+            {
+                await HandleEditTaskDetails(callbackQuery);
             }
         }
 
@@ -417,6 +438,100 @@ namespace Bot
 
             taskManager.RemoveTask(message.Chat.Id, taskToMarkDone);
             await botClient.SendTextMessageAsync(message.Chat.Id, $"Task '{taskToMarkDone.Name}' marked as done and removed from the list.");
+        }
+
+        private async Task HandleTaskCommand(Message message)
+        {
+            var parts = message.Text.Split(' ', 2);
+            if (parts.Length < 2)
+            {
+                await botClient.SendTextMessageAsync(message.Chat.Id, "Usage: /task <Task Name>");
+                return;
+            }
+
+            var taskName = parts[1];
+            var task = taskManager.GetTask(message.Chat.Id, taskName);
+
+            if (task == null)
+            {
+                await botClient.SendTextMessageAsync(message.Chat.Id, "Task not found.");
+                return;
+            }
+
+            var importanceEmoji = task.Importance switch
+            {
+                "red" => "🔴",
+                "blue" => "🔵",
+                "green" => "🟢",
+                _ => "⚪"
+            };
+
+            var taskDetails = $"📌 *Task: {task.Name}*\n\n" +
+                              $"📅 Due Date: {task.DueDate:yyyy-MM-dd}\n" +
+                              $"{importanceEmoji} Importance: {task.Importance}\n\n" +
+                              $"📝 Description:\n{task.Description ?? "Not set"}\n\n" +
+                              $"💬 Comments:\n{(task.Comments.Any() ? string.Join("\n", task.Comments) : "None")}\n\n" +
+                              $"🔗 Links:\n{(task.Links.Any() ? string.Join("\n", task.Links) : "None")}";
+
+            var keyboard = new InlineKeyboardMarkup(new[]
+            {
+        new []
+        {
+            InlineKeyboardButton.WithCallbackData("📝 Add/Edit Description", $"edit_description_{taskName}"),
+        },
+        new []
+        {
+            InlineKeyboardButton.WithCallbackData("💬 Add Comment", $"edit_comments_{taskName}"),
+        },
+        new []
+        {
+            InlineKeyboardButton.WithCallbackData("🔗 Add Link", $"edit_links_{taskName}"),
+        }
+    });
+
+            await botClient.SendTextMessageAsync(
+                chatId: message.Chat.Id,
+                text: taskDetails,
+                parseMode: ParseMode.Markdown,
+                replyMarkup: keyboard
+            );
+        }
+
+        private async Task HandleEditTaskDetails(CallbackQuery callbackQuery)
+        {
+            var chatId = callbackQuery.Message.Chat.Id;
+            var data = callbackQuery.Data.Split('_');
+            var field = data[1];
+            var taskName = data[2];
+
+            string prompt = field switch
+            {
+                "description" => "Please enter the new description for the task:",
+                "comments" => "Please enter a new comment for the task:",
+                "links" => "Please enter a new link for the task:",
+                _ => throw new ArgumentException("Invalid field")
+            };
+
+            taskStates[chatId] = new TaskState { Name = taskName, CurrentStep = $"edit_{field}" };
+            await botClient.SendTextMessageAsync(chatId, prompt);
+            await botClient.AnswerCallbackQueryAsync(callbackQuery.Id);
+        }
+
+        private async Task UpdateTaskDetails(long chatId, string taskName, string field, string value)
+        {
+            try
+            {
+                taskManager.UpdateTaskDetails(chatId, taskName, field, value);
+                await botClient.SendTextMessageAsync(chatId, $"{char.ToUpper(field[0])}{field.Substring(1)} для задачи '{taskName}' успешно обновлено.");
+            }
+            catch (Exception ex)
+            {
+                await botClient.SendTextMessageAsync(chatId, $"Произошла ошибка при обновлении задачи: {ex.Message}");
+            }
+            finally
+            {
+                taskStates.Remove(chatId);
+            }
         }
     }
 }

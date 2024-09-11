@@ -180,5 +180,79 @@ namespace Bot
             }
             return chatIds;
         }
+
+        public TaskItem GetTask(long chatId, string taskName)
+        {
+            using (var conn = new NpgsqlConnection(connectionString))
+            {
+                conn.Open();
+                using (var cmd = new NpgsqlCommand())
+                {
+                    cmd.Connection = conn;
+                    cmd.CommandText = @"
+                    SELECT name, due_date, importance, description, comments, links FROM tasks
+                    WHERE user_id = (SELECT id FROM users WHERE chat_id = @chatId) AND name = @name;
+                ";
+                    cmd.Parameters.AddWithValue("chatId", chatId);
+                    cmd.Parameters.AddWithValue("name", taskName);
+                    using (var reader = cmd.ExecuteReader())
+                    {
+                        if (reader.Read())
+                        {
+                            return new TaskItem
+                            {
+                                Name = reader.GetString(0),
+                                DueDate = reader.GetDateTime(1),
+                                Importance = reader.GetString(2),
+                                Description = reader.IsDBNull(3) ? null : reader.GetString(3),
+                                Comments = reader.IsDBNull(4) ? new List<string>() : reader.GetFieldValue<string[]>(4).ToList(),
+                                Links = reader.IsDBNull(5) ? new List<string>() : reader.GetFieldValue<string[]>(5).ToList()
+                            };
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+
+        public void UpdateTaskDetails(long chatId, string taskName, string field, string value)
+        {
+            Console.WriteLine($"Updating task: ChatId={chatId}, TaskName={taskName}, Field={field}, Value={value}");
+            using (var conn = new NpgsqlConnection(connectionString))
+            {
+                conn.Open();
+                using (var cmd = new NpgsqlCommand())
+                {
+                    cmd.Connection = conn;
+
+                    string updateSql = "";
+                    if (field == "description")
+                    {
+                        updateSql = "UPDATE tasks SET description = @value WHERE user_id = (SELECT id FROM users WHERE chat_id = @chatId) AND name = @name";
+                    }
+                    else if (field == "comments" || field == "links")
+                    {
+                        updateSql = $"UPDATE tasks SET {field} = COALESCE({field}, ARRAY[]::text[]) || @value::text WHERE user_id = (SELECT id FROM users WHERE chat_id = @chatId) AND name = @name";
+                    }
+                    else
+                    {
+                        throw new ArgumentException($"Invalid field: {field}");
+                    }
+
+                    cmd.CommandText = updateSql;
+                    cmd.Parameters.AddWithValue("chatId", chatId);
+                    cmd.Parameters.AddWithValue("name", taskName);
+                    cmd.Parameters.AddWithValue("value", value);
+
+                    int rowsAffected = cmd.ExecuteNonQuery();
+                    Console.WriteLine($"Rows affected: {rowsAffected}");
+
+                    if (rowsAffected == 0)
+                    {
+                        throw new Exception($"Failed to update task '{taskName}' for chat ID {chatId}. Task may not exist.");
+                    }
+                }
+            }
+        }
     }
 }

@@ -15,5 +15,9 @@
         List<TaskItem> GetNearestTasks(long chatId);
 
         public IEnumerable<long> GetAllChatIds();
+
+        TaskItem GetTask(long chatId, string taskName);
+
+        void UpdateTaskDetails(long chatId, string taskName, string field, string value);
     }
 }
