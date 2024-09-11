@@ -122,24 +122,6 @@ namespace Bot
             return tasks;
         }
 
-        public void RemoveAllTasks(long chatId)
-        {
-            using (var conn = new NpgsqlConnection(connectionString))
-            {
-                conn.Open();
-                using (var cmd = new NpgsqlCommand())
-                {
-                    cmd.Connection = conn;
-                    cmd.CommandText = @"
-                        DELETE FROM tasks
-                        WHERE user_id = (SELECT id FROM users WHERE chat_id = @chatId);
-                    ";
-                    cmd.Parameters.AddWithValue("chatId", chatId);
-                    cmd.ExecuteNonQuery();
-                }
-            }
-        }
-
         public void RemoveTask(long chatId, TaskItem task)
         {
             using (var conn = new NpgsqlConnection(connectionString))

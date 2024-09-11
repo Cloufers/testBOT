@@ -91,6 +91,10 @@ namespace Bot
                     await HandleTaskCommand(message);
                     break;
 
+                case "/delete":
+                    await DeleteTask(message);
+                    break;
+
                 default:
                     await botClient.SendTextMessageAsync(message.Chat.Id, "Unknown command.");
                     break;
@@ -101,7 +105,7 @@ namespace Bot
         {
             var keyboard = new ReplyKeyboardMarkup(new[]
             {
-        new KeyboardButton[] { "📋 Меню" }
+        new KeyboardButton[] { "Меню 📋" }
     })
             {
                 ResizeKeyboard = true
@@ -117,6 +121,7 @@ namespace Bot
 /task - Просмотреть детали задачи
 /cancel - Отменить процесс создания задачи
 /done - Отметить задачу как выполненную
+/delete - Удалить задачу
 
 Начнем! 🎉";
 
@@ -336,22 +341,58 @@ namespace Bot
 
         private async Task ShowNearestTasks(Message message)
         {
-            // Retrieve the list of tasks from the task manager
-            var taskList = taskManager.GetTasks(message.Chat.Id);
+            var taskList = taskManager.GetNearestTasks(message.Chat.Id);
 
-            // Notify the user if there are no tasks
             if (taskList.Count == 0)
             {
-                await botClient.SendTextMessageAsync(message.Chat.Id, "No tasks found.");
+                await botClient.SendTextMessageAsync(message.Chat.Id, "У вас нет предстоящих задач. Используйте /addtask, чтобы добавить новую задачу.");
                 return;
             }
 
-            // Sort tasks by the nearest due date
-            var nearestTasks = taskList.OrderBy(t => t.DueDate).Take(5);
+            var response = new StringBuilder("📅 Ваши ближайшие задачи:\n\n");
 
-            // Format and display the nearest tasks
-            var response = string.Join("\n", nearestTasks.Select(t => $"{t.Name} - {t.DueDate.ToShortDateString()} - {t.Importance}"));
-            await botClient.SendTextMessageAsync(message.Chat.Id, response);
+            var today = DateTime.Today;
+            var tomorrow = today.AddDays(1);
+            var nextWeek = today.AddDays(7);
+
+            foreach (var task in taskList)
+            {
+                string timeFrame;
+                if (task.DueDate.Date == today)
+                {
+                    timeFrame = "Сегодня";
+                }
+                else if (task.DueDate.Date == tomorrow)
+                {
+                    timeFrame = "Завтра";
+                }
+                else if (task.DueDate.Date <= nextWeek)
+                {
+                    timeFrame = task.DueDate.ToString("dddd"); // День недели
+                }
+                else
+                {
+                    timeFrame = task.DueDate.ToString("dd.MM.yyyy");
+                }
+
+                string importanceEmoji = GetImportanceEmoji(task.Importance);
+
+                response.AppendLine($"{importanceEmoji} {timeFrame}: {task.Name}");
+
+                if (!string.IsNullOrWhiteSpace(task.Description))
+                {
+                    var shortDescription = task.Description.Length > 50
+                        ? task.Description.Substring(0, 47) + "..."
+                        : task.Description;
+                    response.AppendLine($"   📝 {shortDescription}");
+                }
+
+                response.AppendLine();
+            }
+
+            response.AppendLine("Используйте /task <название задачи> для просмотра деталей.");
+
+            await botClient.SendTextMessageAsync(message.Chat.Id, response.ToString());
         }
 
         private async Task DeleteTask(Message message)
@@ -532,6 +573,17 @@ namespace Bot
             {
                 taskStates.Remove(chatId);
             }
+        }
+
+        private string GetImportanceEmoji(string importance)
+        {
+            return importance.ToLower() switch
+            {
+                "red" => "🔴",
+                "blue" => "🔵",
+                "green" => "🟢",
+                _ => "⚪"
+            };
         }
     }
 }
